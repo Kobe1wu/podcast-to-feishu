@@ -3,12 +3,27 @@
 将播客笔记写入飞书文档
 """
 import os
+import re
 import requests
 import time
 from typing import Optional
 
-
 BASE_URL = "https://open.feishu.cn/open-apis"
+
+
+def clean_html(text: str) -> str:
+    """清洗 HTML 标签和特殊字符，返回纯文本"""
+    if not text:
+        return ""
+    # 移除 HTML 标签
+    text = re.sub(r'<[^>]+>', '', text)
+    # 解码常见 HTML 实体
+    import html
+    text = html.unescape(text)
+    # 移除多余空白
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = text.strip()
+    return text
 
 
 class FeishuClient:
@@ -75,6 +90,9 @@ class FeishuClient:
         """
         url = f"{BASE_URL}/docx/v1/documents/{doc_id}/blocks/{parent_id}/children"
 
+        # 清洗 HTML
+        text = clean_html(text)
+
         # 构建 block body
         body = {}
         if block_type == 20:  # 分割线
@@ -127,7 +145,7 @@ class FeishuClient:
         resp = requests.post(url, headers=self._headers(), json=payload)
         data = resp.json()
         if data.get("code") != 0:
-            print(f"  [飞书] 添加块失败: {data}, text={text[:50]}")
+            print(f"  [飞书] 添加块失败: {data}, text[:50]={text[:50]}")
             return None
         # 返回新块ID
         children = data.get("data", {}).get("children", [])
@@ -155,14 +173,12 @@ class FeishuClient:
         self.add_text_block(doc_id, root_id, "", block_type=20)  # 分割线
 
         # 写入总结内容（已包含结构化 Markdown）
-        # 逐行分析写为不同块类型
         for line in summary_text.split("\n"):
             line = line.strip()
             if not line:
                 continue
 
             if line.startswith("## "):
-                # 二级标题
                 self.add_text_block(doc_id, root_id, line[3:].strip(), block_type=4)
             elif line.startswith("# "):
                 self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=3)
@@ -179,14 +195,12 @@ class FeishuClient:
 
         # 如果有完整文字稿，添加在文档末尾
         if full_transcript:
-            self.add_text_block(doc_id, root_id, "完整文字稿", block_type=4)
             self.add_text_block(doc_id, root_id, "", block_type=20)
+            self.add_text_block(doc_id, root_id, "完整文字稿", block_type=4)
 
-            # 文字稿太长时分段写入
             max_len = 2000
             for i in range(0, len(full_transcript), max_len):
                 chunk = full_transcript[i:i+max_len]
-                # 在大段文字前后加标识
                 if chunk.strip():
                     self.add_text_block(doc_id, root_id, chunk, block_type=2)
 
