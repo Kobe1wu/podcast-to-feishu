@@ -55,15 +55,17 @@ def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
     except OSError:
         pass
 
-    # verbose_json 返回带分段的结构，提取 text 并加入段落换行
+    # verbose_json 返回对象结构，提取各段 text 并加入段落分隔
+    result = ""
     if hasattr(transcript, 'segments') and transcript.segments:
-        text = ""
         for seg in transcript.segments:
-            text += seg.get("text", "").strip() + "\n\n"
-        result = text.strip()
+            text = getattr(seg, 'text', str(seg)).strip()
+            if text:
+                result += text + "\n\n"
     else:
-        result = transcript.text if hasattr(transcript, 'text') else str(transcript)
+        result = getattr(transcript, 'text', str(transcript))
 
+    result = result.strip()
     print(f"  [转录] 完成! 字数: {len(result)}")
     return result
 
@@ -88,7 +90,6 @@ def download_audio(url: str) -> str:
 
 
 def compress_audio(input_path: str, output_path: str):
-    """用 ffmpeg 压缩音频"""
     import subprocess
     result = subprocess.run(
         ["ffmpeg", "-y", "-i", input_path, "-b:a", "32k", "-ac", "1", "-ar", "16000", output_path],
