@@ -64,7 +64,7 @@ def main():
         if transcript:
             print("\n🗣 Step 2.5: 说话人识别")
             try:
-                labeled_transcript = label_speakers(transcript, episode["podcast"])
+                labeled_transcript = label_speakers(transcript, episode["podcast"], episode.get("speakers"))
                 print(f"  [说话人识别] 完成! 字数: {len(labeled_transcript)}")
             except Exception as e:
                 print(f"  [说话人识别] 失败，使用原始文字稿: {e}")
