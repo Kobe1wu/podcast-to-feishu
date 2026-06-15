@@ -2,12 +2,20 @@
   "podcasts": [
     {
       "name": "三点下班",
-      "rss_url": "https://feed.xyzfm.space/tlel9j4tg3eu"
+      "rss_url": "https://feed.xyzfm.space/tlel9j4tg3eu",
+      "speakers": [
+        "浩哥",
+        "星辰"
+      ]
     },
     {
       "name": "The Wanderers 流浪者",
       "rss_url": "https://feed.xyzfm.space/ukgvfq899txk",
-      "speakers": ["易燃", "Jason", "Vincent"]
+      "speakers": [
+        "易燃",
+        "Jason",
+        "Vincent"
+      ]
     }
   ]
 }
