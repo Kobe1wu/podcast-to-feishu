@@ -44,7 +44,7 @@ def episode_id(entry) -> str:
     return None
 
 
-def check_podcast(rss_url: str, podcast_name: str, state: dict) -> list:
+def check_podcast(rss_url: str, podcast_name: str, state: dict, speakers: list = None) -> list:
     """
     检查单个播客的RSS，返回新节目列表
     返回: [(episode_id, episode_data), ...]
@@ -93,6 +93,7 @@ def check_podcast(rss_url: str, podcast_name: str, state: dict) -> list:
             "audio_url": audio_url,
             "published": published or datetime.now(timezone.utc).isoformat(),
             "link": entry.get("link", ""),
+            "speakers": speakers or [],
         }
         new_episodes.append((eid, episode))
 
@@ -113,7 +114,7 @@ def check_all(config: dict) -> list:
 
         print(f"[检查] {name}: {rss_url}")
         try:
-            new = check_podcast(rss_url, name, state)
+            new = check_podcast(rss_url, name, state, podcast.get("speakers"))
             all_new.extend(new)
             for eid, ep in new:
                 state["processed"].append(eid)
