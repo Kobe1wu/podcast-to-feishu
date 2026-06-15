@@ -1,36 +1,40 @@
 """
 飞书文档写入模块
-将播客笔记写入飞书文档
 """
 import os
 import re
 import requests
 import time
-from typing import Optional
 
 BASE_URL = "https://open.feishu.cn/open-apis"
 
+# Feishu Docx block_type 必须用字符串
+BLOCK_TEXT = "2"
+BLOCK_H1 = "3"
+BLOCK_H2 = "4"
+BLOCK_H3 = "5"
+BLOCK_BULLET = "9"
+BLOCK_ORDERED = "10"
+BLOCK_QUOTE = "12"
+BLOCK_DIVIDER = "15"
+
 
 def clean_html(text: str) -> str:
-    """清洗 HTML 标签和特殊字符，返回纯文本"""
     if not text:
         return ""
     text = re.sub(r'<[^>]+>', '', text)
     import html
     text = html.unescape(text)
     text = re.sub(r'\n{3,}', '\n\n', text)
-    text = text.strip()
-    return text
+    return text.strip()
 
 
 class FeishuClient:
-    """飞书 API 客户端"""
-
     def __init__(self, app_id: str = None, app_secret: str = None):
         self.app_id = app_id or os.environ.get("FEISHU_APP_ID")
         self.app_secret = app_secret or os.environ.get("FEISHU_APP_SECRET")
         if not self.app_id or not self.app_secret:
-            raise ValueError("请设置 FEISHU_APP_ID 和 FEISHU_APP_SECRET 环境变量")
+            raise ValueError("请设置 FEISHU_APP_ID 和 FEISHU_APP_SECRET")
         self._token = None
         self._token_expire = 0
 
@@ -46,8 +50,11 @@ class FeishuClient:
         self._token_expire = time.time() + data.get("expire", 7200)
         return self._token
 
-    def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self._get_token()}", "Content-Type": "application/json"}
+    def _headers(self):
+        return {
+            "Authorization": f"Bearer {self._get_token()}",
+            "Content-Type": "application/json",
+        }
 
     def create_document(self, title: str) -> str:
         url = f"{BASE_URL}/docx/v1/documents"
@@ -59,47 +66,41 @@ class FeishuClient:
         print(f"  [飞书] 创建文档成功: {title} (id={doc_id})")
         return doc_id
 
-    def _make_text_block(self, text: str, block_type: int) -> dict:
-        """构建 block body，block_type 是整数"""
+    def _make_block(self, text: str, block_type: str) -> dict:
         text = clean_html(text)
-        text_run = {"content": text}
-
-        if block_type == 20:
-            return {"block_type": 20, "divider": {}}
-
         body = {"block_type": block_type}
 
-        if block_type in (3, 4, 5):
-            level_map = {3: 1, 4: 2, 5: 3}
-            body["heading" + str(level_map[block_type])] = {"elements": [{"text_run": text_run}]}
-        elif block_type == 15:
-            body["quote"] = {"elements": [{"text_run": text_run}]}
-        elif block_type in (9, 11):
-            key = "bullet" if block_type == 9 else "ordered"
-            body[key] = {"elements": [{"text_run": text_run}]}
-        else:  # block_type == 2, plain text
-            body["text"] = {"elements": [{"text_run": text_run}]}
+        if block_type == BLOCK_DIVIDER:
+            body["divider"] = {}
+        elif block_type in (BLOCK_H1, BLOCK_H2, BLOCK_H3):
+            level_map = {BLOCK_H1: 1, BLOCK_H2: 2, BLOCK_H3: 3}
+            body["heading" + str(level_map[block_type])] = {
+                "elements": [{"text_run": {"content": text}}]
+            }
+        elif block_type == BLOCK_QUOTE:
+            body["quote"] = {"elements": [{"text_run": {"content": text}}]}
+        elif block_type in (BLOCK_BULLET, BLOCK_ORDERED):
+            key = "bullet" if block_type == BLOCK_BULLET else "ordered"
+            body[key] = {"elements": [{"text_run": {"content": text}}]}
+        else:
+            body["text"] = {"elements": [{"text_run": {"content": text}}]}
 
         return body
 
     def add_text_block(self, doc_id: str, parent_id: str, text: str,
-                       block_type: int = 2, heading_level: int = None) -> str:
+                       block_type: str = BLOCK_TEXT) -> str:
         url = f"{BASE_URL}/docx/v1/documents/{doc_id}/blocks/{parent_id}/children"
-        body = self._make_text_block(text, block_type)
+        body = self._make_block(text, block_type)
         payload = {"children": [body]}
 
         resp = requests.post(url, headers=self._headers(), json=payload)
         data = resp.json()
         if data.get("code") != 0:
-            print(f"  [飞书] 添加块失败: {data}, text[:50]={text[:50]}")
-            # Print the request for debugging
-            import json as j
-            print(f"  [DEBUG] payload: {j.dumps(payload, ensure_ascii=False)[:300]}")
+            import json
+            print(f"  [飞书] 添加块失败: {json.dumps(data, ensure_ascii=False)[:200]}")
             return None
         children = data.get("data", {}).get("children", [])
-        if children:
-            return children[0].get("block_id")
-        return None
+        return children[0].get("block_id") if children else None
 
     def write_podcast_note(self, title: str, summary_text: str,
                            full_transcript: str = None,
@@ -109,38 +110,35 @@ class FeishuClient:
         doc_id = self.create_document(doc_title)
         root_id = doc_id
 
-        self.add_text_block(doc_id, root_id, f"来源播客: {podcast_name}", block_type=2)
+        self.add_text_block(doc_id, root_id, f"来源播客: {podcast_name}")
         if episode_link:
-            self.add_text_block(doc_id, root_id, f"原文链接: {episode_link}", block_type=2)
-        self.add_text_block(doc_id, root_id, "", block_type=20)
+            self.add_text_block(doc_id, root_id, f"原文链接: {episode_link}")
+        self.add_text_block(doc_id, root_id, "", BLOCK_DIVIDER)
 
         for line in summary_text.split("\n"):
             line = line.strip()
             if not line:
                 continue
             if line.startswith("## "):
-                self.add_text_block(doc_id, root_id, line[3:].strip(), block_type=4)
+                self.add_text_block(doc_id, root_id, line[3:].strip(), BLOCK_H2)
             elif line.startswith("# "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=3)
+                self.add_text_block(doc_id, root_id, line[2:].strip(), BLOCK_H1)
             elif line.startswith("> "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=15)
-            elif line.startswith("- "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=9)
-            elif line.startswith("* "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=9)
+                self.add_text_block(doc_id, root_id, line[2:].strip(), BLOCK_QUOTE)
+            elif line.startswith("- ") or line.startswith("* "):
+                self.add_text_block(doc_id, root_id, line[2:].strip(), BLOCK_BULLET)
             elif line[0].isdigit() and ". " in line[:4]:
-                self.add_text_block(doc_id, root_id, line.split(". ", 1)[1], block_type=11)
+                self.add_text_block(doc_id, root_id, line.split(". ", 1)[1], BLOCK_ORDERED)
             else:
-                self.add_text_block(doc_id, root_id, line, block_type=2)
+                self.add_text_block(doc_id, root_id, line)
 
         if full_transcript:
-            self.add_text_block(doc_id, root_id, "", block_type=20)
-            self.add_text_block(doc_id, root_id, "完整文字稿", block_type=4)
-            max_len = 2000
-            for i in range(0, len(full_transcript), max_len):
-                chunk = full_transcript[i:i+max_len]
+            self.add_text_block(doc_id, root_id, "", BLOCK_DIVIDER)
+            self.add_text_block(doc_id, root_id, "完整文字稿", BLOCK_H2)
+            for i in range(0, len(full_transcript), 2000):
+                chunk = full_transcript[i:i+2000]
                 if chunk.strip():
-                    self.add_text_block(doc_id, root_id, chunk, block_type=2)
+                    self.add_text_block(doc_id, root_id, chunk)
 
         doc_link = f"https://bytedance.feishu.cn/docx/{doc_id}"
         print(f"  [飞书] 文档链接: {doc_link}")
