@@ -1,52 +1,33 @@
 """
 Groq Whisper 语音转文字
-使用 Groq 免费 API 进行音频转录（whisper-large-v3-turbo）
-完全免费，无需信用卡
+使用 Groq 免费 API 进行音频转录
 """
 import os
 import requests
 import tempfile
 from openai import OpenAI
 
-
-# Groq 最大支持 25MB 文件上传
 MAX_FILE_SIZE = 25 * 1024 * 1024
 
 
 def get_groq_client() -> OpenAI:
-    """获取 Groq 客户端"""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise ValueError("请设置 GROQ_API_KEY 环境变量")
-
-    return OpenAI(
-        api_key=api_key,
-        base_url="https://api.groq.com/openai/v1"
-    )
+    return OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 
 
 def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
-    """
-    转写音频文件为文字
-    使用 Groq Whisper API（完全免费）
-    - 先下载音频到临时文件
-    - 上传到 Groq 进行转录
-    - 返回完整文字稿
-    """
     client = get_groq_client()
 
-    # 下载音频到临时文件
     print(f"  [转录] 下载音频: {podcast_name}")
     local_path = download_audio(audio_url)
 
     file_size = os.path.getsize(local_path)
     print(f"  [转录] 音频大小: {file_size / 1024 / 1024:.1f}MB")
 
-    # 检查文件大小限制
     if file_size > MAX_FILE_SIZE:
         print(f"  [转录] 音频超过25MB，已截断处理")
-        # Groq 限制 25MB，超过需要截断
-        # 先尝试压缩或分段处理
         truncated_path = local_path + ".truncated.mp3"
         try:
             compress_audio(local_path, truncated_path)
@@ -59,10 +40,11 @@ def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
     print(f"  [转录] 调用 Groq Whisper API...")
     with open(local_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
-            model="whisper-large-v3-turbo",
+            model="whisper-large-v3",
             file=audio_file,
-            response_format="text",
+            response_format="verbose_json",
             language="zh",
+            temperature=0.0,
         )
 
     # 清理临时文件
@@ -73,13 +55,20 @@ def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
     except OSError:
         pass
 
-    result = transcript if isinstance(transcript, str) else (transcript.text if hasattr(transcript, 'text') else str(transcript))
+    # verbose_json 返回带分段的结构，提取 text 并加入段落换行
+    if hasattr(transcript, 'segments') and transcript.segments:
+        text = ""
+        for seg in transcript.segments:
+            text += seg.get("text", "").strip() + "\n\n"
+        result = text.strip()
+    else:
+        result = transcript.text if hasattr(transcript, 'text') else str(transcript)
+
     print(f"  [转录] 完成! 字数: {len(result)}")
     return result
 
 
 def download_audio(url: str) -> str:
-    """下载音频到临时文件"""
     local_filename = os.path.join(
         tempfile.gettempdir(),
         "podcast_" + url.split("/")[-1].split("?")[0][-40:] or "audio.mp3"
@@ -99,7 +88,7 @@ def download_audio(url: str) -> str:
 
 
 def compress_audio(input_path: str, output_path: str):
-    """用 ffmpeg 压缩音频（降低码率以满足25MB限制）"""
+    """用 ffmpeg 压缩音频"""
     import subprocess
     result = subprocess.run(
         ["ffmpeg", "-y", "-i", input_path, "-b:a", "32k", "-ac", "1", "-ar", "16000", output_path],
@@ -110,5 +99,4 @@ def compress_audio(input_path: str, output_path: str):
 
 
 def estimate_cost(audio_minutes: float) -> str:
-    """Groq 完全免费"""
     return "免费"
