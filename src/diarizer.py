@@ -12,30 +12,24 @@ def get_client():
     return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
 
-def label_speakers(transcript: str, podcast_name: str) -> str:
+def label_speakers(transcript: str, podcast_name: str, known_speakers: list = None) -> str:
     """用 AI 识别并标注不同说话人，合并同说话人的连续发言"""
     client = get_client()
 
     max_chars = 12000
     text = transcript[:max_chars]
 
-    system_prompt = """你是一个播客文字稿处理助手。请完成以下任务：
+    # 构建说话人提示
+    speaker_hint = ""
+    if known_speakers:
+        names = "、".join(known_speakers)
+        speaker_hint = f"\n已知说话人有：{names}。如果遇到不在名单中的说话人，请标注为「嘉宾」。请优先将对话内容与已知说话人匹配。"
 
-1. 识别文字稿中的不同说话人
-2. 如果能推断出名字/称呼（如「浩哥」「小明」），使用实际称呼；否则用「主持人」「嘉宾」
-3. **关键**：把同一个说话人的连续发言合并成完整的段落，不要逐句换行。一个说话人连续说的一段话应该写在一个段落里。
+    system_prompt = f"""你是一个播客文字稿处理助手。请完成以下任务：
 
-错误示例（不要这样）：
-甲：大家好。
-甲：今天聊AI。
-乙：对，很有意思。
-
-正确示例（要这样）：
-甲：大家好。今天聊AI。
-
-乙：对，很有意思。
-
-4. 用段落间空行分隔不同说话人的切换，保留原文标点。"""
+1. 识别文字稿中的不同说话人{speaker_hint}
+2. 把同一个说话人的连续发言合并成完整的段落，不要逐句换行。一个说话人连续说的一段话应该写在一个段落里。用段落间空行分隔不同说话人的切换。
+3. 保留原文标点。"""
 
     try:
         resp = client.chat.completions.create(
