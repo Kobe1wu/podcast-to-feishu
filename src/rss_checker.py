@@ -5,10 +5,18 @@ import feedparser
 import hashlib
 import json
 import os
+import requests
 from datetime import datetime, timezone
 from typing import Optional
 
 STATE_FILE = "state.json"
+
+# xyzfm.space Tengine 服务端通过 UA ACL 黑名单拦截 feedparser 等非浏览器 User-Agent
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
 
 def load_state() -> dict:
@@ -41,7 +49,15 @@ def check_podcast(rss_url: str, podcast_name: str, state: dict) -> list:
     检查单个播客的RSS，返回新节目列表
     返回: [(episode_id, episode_data), ...]
     """
-    feed = feedparser.parse(rss_url)
+    # 用浏览器 UA 绕过 xyzfm.space 的 Tengine UA ACL 黑名单
+    headers = {"User-Agent": BROWSER_UA}
+    try:
+        resp = requests.get(rss_url, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise Exception(f"HTTP 请求失败: {e}")
+
+    feed = feedparser.parse(resp.content)
     new_episodes = []
 
     processed = set(state.get("processed", []))
