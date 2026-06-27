@@ -1,6 +1,6 @@
 """
 Groq Whisper 语音转文字
-使用 Groq 免费 API 进行音频转录（whisper-large-v3-turbo）
+使用 Groq 免费 API 进行音频转录（whisper-large-v3，支持完整音频）
 完全免费，无需信用卡
 """
 import os
@@ -29,13 +29,13 @@ def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
     """
     转写音频文件为文字
     使用 Groq Whisper API（完全免费）
+    - whisper-large-v3: 支持完整音频时长（无30分钟限制）
     - 先下载音频到临时文件
     - 上传到 Groq 进行转录
     - 返回完整文字稿
     """
     client = get_groq_client()
 
-    # 下载音频到临时文件
     print(f"  [转录] 下载音频: {podcast_name}")
     local_path = download_audio(audio_url)
 
@@ -44,22 +44,21 @@ def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
 
     # 检查文件大小限制
     if file_size > MAX_FILE_SIZE:
-        print(f"  [转录] 音频超过25MB，已截断处理")
-        # Groq 限制 25MB，超过需要截断
-        # 先尝试压缩或分段处理
+        print(f"  [转录] 音频超过25MB，正在压缩...")
         truncated_path = local_path + ".truncated.mp3"
         try:
             compress_audio(local_path, truncated_path)
+            os.remove(local_path)
             local_path = truncated_path
             file_size = os.path.getsize(local_path)
             print(f"  [转录] 压缩后: {file_size / 1024 / 1024:.1f}MB")
         except Exception as e:
             print(f"  [转录] 压缩失败，尝试直接上传: {e}")
 
-    print(f"  [转录] 调用 Groq Whisper API...")
+    print(f"  [转录] 调用 Groq Whisper API (whisper-large-v3)...")
     with open(local_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
-            model="whisper-large-v3-turbo",
+            model="whisper-large-v3",
             file=audio_file,
             response_format="text",
             language="zh",
@@ -87,7 +86,7 @@ def download_audio(url: str) -> str:
     if not any(local_filename.endswith(ext) for ext in (".mp3", ".m4a", ".wav", ".aac", ".ogg", ".opus")):
         local_filename += ".mp3"
 
-    resp = requests.get(url, stream=True, timeout=300)
+    resp = requests.get(url, stream=True, timeout=600)
     resp.raise_for_status()
 
     with open(local_filename, "wb") as f:

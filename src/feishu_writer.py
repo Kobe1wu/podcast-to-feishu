@@ -5,7 +5,6 @@
 import os
 import requests
 import time
-from typing import Optional
 
 
 BASE_URL = "https://open.feishu.cn/open-apis"
@@ -56,84 +55,72 @@ class FeishuClient:
         print(f"  [飞书] 创建文档成功: {title} (id={doc_id})")
         return doc_id
 
-    def add_text_block(self, doc_id: str, parent_id: str, text: str, block_type: int = 2,
-                       heading_level: int = None) -> str:
-        """
-        添加文本块到文档
+    def _build_text_body(self, text: str, block_type: int = 2) -> dict:
+        """构建单个 block 的请求体"""
+        body = {"block_type": block_type}
 
-        block_type:
-          2 = text
-          3 = heading1
-          4 = heading2
-          5 = heading3
-          9 = bullet
-          11 = ordered
-          15 = quote
-          20 = divider (可不传 text)
-
-        返回新 block 的 block_id
-        """
-        url = f"{BASE_URL}/docx/v1/documents/{doc_id}/blocks/{parent_id}/children"
-
-        # 构建 block body
-        body = {}
-        if block_type == 20:  # 分割线
-            body["block_type"] = 20
+        if block_type == 20:
             body["divider"] = {}
-        elif block_type in (3, 4, 5):  # 标题
-            level_map = {3: 1, 4: 2, 5: 3}
-            body["block_type"] = block_type
-            body["heading" + str(level_map[block_type])] = {
-                "elements": [{
-                    "text_run": {
-                        "content": text,
-                        "text_element_style": {}
-                    }
-                }]
+        elif block_type == 3:
+            body["heading1"] = {
+                "elements": [{"text_run": {"content": text, "text_element_style": {}}}]
             }
-        elif block_type == 15:  # 引用
-            body["block_type"] = 15
+        elif block_type == 4:
+            body["heading2"] = {
+                "elements": [{"text_run": {"content": text, "text_element_style": {}}}]
+            }
+        elif block_type == 5:
+            body["heading3"] = {
+                "elements": [{"text_run": {"content": text, "text_element_style": {}}}]
+            }
+        elif block_type == 15:
             body["quote"] = {
-                "elements": [{
-                    "text_run": {
-                        "content": text,
-                        "text_element_style": {}
-                    }
-                }]
+                "elements": [{"text_run": {"content": text, "text_element_style": {}}}]
             }
-        elif block_type in (9, 11):  # 无序/有序列表
-            body["block_type"] = block_type
-            key = "bullet" if block_type == 9 else "ordered"
-            body[key] = {
-                "elements": [{
-                    "text_run": {
-                        "content": text,
-                        "text_element_style": {}
-                    }
-                }]
+        elif block_type == 9:
+            body["bullet"] = {
+                "elements": [{"text_run": {"content": text, "text_element_style": {}}}]
             }
-        else:  # 普通文本
-            body["block_type"] = 2
+        elif block_type == 11:
+            body["ordered"] = {
+                "elements": [{"text_run": {"content": text, "text_element_style": {}}}]
+            }
+        else:
             body["text"] = {
-                "elements": [{
-                    "text_run": {
-                        "content": text,
-                        "text_element_style": {}
-                    }
-                }]
+                "elements": [{"text_run": {"content": text, "text_element_style": {}}}]
             }
+        return body
 
-        payload = {"children": [body]}
-        resp = requests.post(url, headers=self._headers(), json=payload)
-        data = resp.json()
-        if data.get("code") != 0:
-            print(f"  [飞书] 添加块失败: {data}, text={text[:50]}")
-            return None
-        # 返回新块ID
-        children = data.get("data", {}).get("children", [])
-        if children:
-            return children[0].get("block_id")
-        return None
+    def add_blocks_batch(self, doc_id: str, parent_id: str, blocks: list) -> list:
+        """
+        批量添加文本块到文档（每批最多50个）
+
+        blocks: [(text, block_type), ...]
+        返回所有新块的 block_id 列表
+        """
+        if not blocks:
+            return []
+
+        url = f"{BASE_URL}/docx/v1/documents/{doc_id}/blocks/{parent_id}/children"
+        all_ids = []
+
+        # 飞书限制每批最多50个块
+        for i in range(0, len(blocks), 50):
+            batch = blocks[i:i+50]
+            children = []
+            for text, block_type in batch:
+                children.append(self._build_text_body(text, block_type))
+
+            payload = {"children": children}
+            resp = requests.post(url, headers=self._headers(), json=payload)
+            data = resp.json()
+            if data.get("code") != 0:
+                print(f"  [飞书] 批量添加块失败(第{i}-{i+len(batch)}个): {data.get('msg', str(data)[:200])}")
+                continue
+            ids = [c.get("block_id") for c in data.get("data", {}).get("children", [])]
+            all_ids.extend(ids)
+
+        return all_ids
 
     def write_podcast_note(self, title: str, summary_text: str, full_transcript: str = None,
                            podcast_name: str = "", episode_link: str = "") -> str:
@@ -144,53 +131,55 @@ class FeishuClient:
         """
         doc_title = f"🎧 {podcast_name} - {title}"
         doc_id = self.create_document(doc_title)
-
-        # 文档的根 block ID 就是文档 ID
         root_id = doc_id
 
-        # 写入元信息
-        self.add_text_block(doc_id, root_id, f"来源播客: {podcast_name}", block_type=2)
-        if episode_link:
-            self.add_text_block(doc_id, root_id, f"原文链接: {episode_link}", block_type=2)
-        self.add_text_block(doc_id, root_id, "", block_type=20)  # 分割线
+        # 准备所有要写入的块
+        all_blocks = []
 
-        # 写入总结内容（已包含结构化 Markdown）
-        # 逐行分析写为不同块类型
+        # 元信息
+        all_blocks.append((f"来源播客: {podcast_name}", 2))
+        if episode_link:
+            all_blocks.append((f"原文链接: {episode_link}", 2))
+        all_blocks.append(("", 20))
+
+        # 总结内容（Markdown → Feishu 块）
         for line in summary_text.split("\n"):
             line = line.strip()
             if not line:
                 continue
 
-            if line.startswith("## "):
-                # 二级标题
-                self.add_text_block(doc_id, root_id, line[3:].strip(), block_type=4)
+            if line.startswith("## ") or line.startswith("### "):
+                all_blocks.append((line.split(" ", 1)[1].strip(), 4))
             elif line.startswith("# "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=3)
+                all_blocks.append((line.split(" ", 1)[1].strip(), 3))
             elif line.startswith("> "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=15)
-            elif line.startswith("- "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=9)
-            elif line.startswith("* "):
-                self.add_text_block(doc_id, root_id, line[2:].strip(), block_type=9)
+                all_blocks.append((line[2:].strip(), 15))
+            elif line.startswith("- ") or line.startswith("* "):
+                all_blocks.append((line[2:].strip(), 9))
             elif line[0].isdigit() and ". " in line[:4]:
-                self.add_text_block(doc_id, root_id, line.split(". ", 1)[1], block_type=11)
+                all_blocks.append((line.split(". ", 1)[1], 11))
             else:
-                self.add_text_block(doc_id, root_id, line, block_type=2)
+                all_blocks.append((line, 2))
+
+        print(f"  [飞书] 总结块数: {len(all_blocks)}")
 
         # 如果有完整文字稿，添加在文档末尾
         if full_transcript:
-            self.add_text_block(doc_id, root_id, "完整文字稿", block_type=4)
-            self.add_text_block(doc_id, root_id, "", block_type=20)
+            all_blocks.append(("完整文字稿", 4))
+            all_blocks.append(("", 20))
 
-            # 文字稿太长时分段写入
-            max_len = 2000
+            # 文字稿以 4000 字一段，减少块数量
+            max_len = 4000
             for i in range(0, len(full_transcript), max_len):
                 chunk = full_transcript[i:i+max_len]
-                # 在大段文字前后加标识
                 if chunk.strip():
-                    self.add_text_block(doc_id, root_id, chunk, block_type=2)
+                    all_blocks.append((chunk, 2))
 
-        # 返回文档链接
+            print(f"  [飞书] 含文字稿总块数: {len(all_blocks)}, 文字稿字数: {len(full_transcript)}")
+
+        # 批量写入
+        add_blocks_batch(doc_id, root_id, all_blocks)
+
         doc_link = f"https://bytedance.feishu.cn/docx/{doc_id}"
         print(f"  [飞书] 文档链接: {doc_link}")
         return doc_link
