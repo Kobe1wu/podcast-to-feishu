@@ -43,6 +43,7 @@ def check_podcast(rss_url: str, podcast_name: str, state: dict) -> list:
     """
     feed = feedparser.parse(rss_url)
     new_episodes = []
+    print(f"  [调试] feedparser 返回 {len(feed.entries)} 个条目, bozo={feed.bozo}")
 
     processed = set(state.get("processed", []))
 
