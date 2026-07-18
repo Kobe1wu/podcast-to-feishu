@@ -42,7 +42,7 @@ def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
         ["-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", local_path],
         cmd="ffprobe"
-    ).strip())
+    ).stdout.strip())
     print(f"  [转录] 音频时长: {duration / 60:.1f} 分钟")
 
     # 如果短于15分钟，直接转录
