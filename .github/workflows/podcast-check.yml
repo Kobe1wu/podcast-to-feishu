@@ -2,9 +2,8 @@ name: 播客更新检查
 
 on:
   schedule:
-    # 每天北京时间 08:00 和 20:00 各跑一次
     - cron: '0 0,12 * * *'
-  workflow_dispatch:  # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   check-and-process:
@@ -12,33 +11,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 安装系统依赖
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: 安装 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: 运行播客检查脚本
         env:
-          # 飞书
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-
-          # Groq Whisper (免费转写)
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-
-          # DeepSeek (用于总结)
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python src/main.py
 
+      - name: 提交处理状态
         run: |
-          python src/main.py
-
-      - name: 保存处理状态
-        uses: actions/upload-artifact@v4
-        with:
-          name: state
-          path: state.json
-          retention-days: 7
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add state.json
+          git diff --staged --quiet || git commit -m "chore: update state"
+          git push
