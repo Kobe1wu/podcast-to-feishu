@@ -156,9 +156,13 @@ def label_speakers(segments: list, podcast_name: str = "") -> list:
     out = []
     for i, s in enumerate(segments):
         lab = labels.get(i)
+        if not lab or not str(lab).strip():
+            lab = "未知"
+        # 清理标签：去掉空白、换行及字面量 \n \r，避免【\n易燃】这类瑕疵
+        lab = re.sub(r"\s+", "", str(lab).replace("\\n", "").replace("\\r", ""))
         if not lab:
             lab = "未知"
-        out.append(f"【{lab}】{s['text']}")
+        out.append(f"【{lab}】{s['text'].lstrip()}")
     return out
 
 
@@ -183,7 +187,9 @@ def _call_diarize(client, batch_lines, role_def, podcast_name):
     if role_def:
         system = ("你是播客角色标注助手。下面逐段文字带全局编号，已知角色定义已给出。"
                   "请严格沿用已有角色名，为每段输出 '<编号>: <角色名>'，每行一个，"
-                  "不要额外解释，不要代码块。无法确定标注 '未知'。编号必须与输入一致。")
+                  "不要额外解释，不要代码块。"
+                  "对话通常交替发言：若某段较短、语境不足，请根据相邻片段的说话人合理推断，"
+                  "不要随意标为未知；只有真正无法判断时才标未知。编号必须与输入一致。")
         user = f"已知角色定义：\n{role_def}\n\n逐段文字：\n{numbered_text}"
         resp = client.chat.completions.create(
             model="deepseek-chat",
@@ -197,10 +203,12 @@ def _call_diarize(client, batch_lines, role_def, podcast_name):
 
     system = ("你是播客角色区分助手。下面逐段文字带全局编号。"
               "请：1) 先判断有几类说话人并定义角色名"
-              "（有明确身份如主持/嘉宾就用身份名，否则用【主播A】【主播B】编号），"
+              "（能识别真名就用真名，如 主持/嘉宾 或 主播A/主播B 编号），"
               "用 '角色定义：' 开头、一行一个 '角色名：描述'；"
               "2) 再为每段标注，用 '标注：' 开头、每行 '<编号>: <角色名>'。"
-              "不要代码块，不要其他解释。无法确定标注 '未知'。编号须与输入一致。")
+              "不要代码块，不要其他解释。"
+              "对话通常交替发言：若某段较短、语境不足，请根据相邻片段的说话人合理推断，"
+              "不要随意标为未知；只有真正无法判断时才标未知。编号须与输入一致。")
     user = f"播客：{podcast_name}\n\n逐段文字：\n{numbered_text}"
     resp = client.chat.completions.create(
         model="deepseek-chat",
@@ -212,11 +220,13 @@ def _call_diarize(client, batch_lines, role_def, podcast_name):
     return _parse_def_and_labels(content)
 
 
-def _parse_label_line(line: str):
-    m = re.match(r"^\s*(\d+)\s*[:：]\s*(.+?)\s*$", line)
-    if m:
-        return int(m.group(1)), m.group(2).strip()
-    return None
+# 提取 编号->角色名 映射。用「下一个编号标记」作为结束边界，
+# 这样即使角色名被模型换行断开（如 "易\n燃"）也能完整捕获，再由重建步骤清理换行。
+_LABEL_RE = re.compile(r"(\d+)\s*[:：]\s*(.+?)(?=\n\d+\s*[:：]|\Z)", re.S)
+
+
+def _parse_label_pairs(text: str) -> dict:
+    return {int(m.group(1)): m.group(2) for m in _LABEL_RE.finditer(text)}
 
 
 def _parse_def_and_labels(content: str):
@@ -225,21 +235,11 @@ def _parse_def_and_labels(content: str):
     def_part = parts[0]
     label_part = parts[1] if len(parts) > 1 else ""
     role_def = re.sub(r"^角色定义\s*[:：]?\s*", "", def_part).strip()
-    labels = {}
-    for line in label_part.splitlines():
-        r = _parse_label_line(line)
-        if r:
-            labels[r[0]] = r[1]
-    return labels, role_def
+    return _parse_label_pairs(label_part), role_def
 
 
 def _parse_labels_only(content: str):
-    labels = {}
-    for line in content.splitlines():
-        r = _parse_label_line(line)
-        if r:
-            labels[r[0]] = r[1]
-    return labels, None
+    return _parse_label_pairs(content), None
 
 
 def download_audio(url: str) -> str:
