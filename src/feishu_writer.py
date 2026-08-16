@@ -58,17 +58,34 @@ class FeishuClient:
         return doc_id
 
     def set_public_sharing(self, doc_id):
-        """设置文档为组织内可查看，自动出现在你的飞书文档列表"""
+        """设置文档为组织内可编辑，自动出现在你的飞书里且你拥有编辑权限"""
         url = f"{BASE_URL}/drive/v1/permissions/{doc_id}/public?type=docx"
         resp = requests.patch(url, headers=self._headers(), json={
-            "link_share_entity": "tenant_readable",
-            "external_access_entity": "open",
+            "link_share_entity": "tenant_editable",
+            "external_access_entity": "closed",
         })
         data = resp.json()
         if data.get("code") != 0:
             print(f"  [飞书] 设置共享权限失败（不影响使用）: {data.get('msg', '')}")
         else:
-            print(f"  [飞书] 已设置组织内共享，文档将出现在你的飞书里")
+            print(f"  [飞书] 已设置组织内可编辑，文档将出现在你的飞书里并可编辑")
+
+    def add_collaborator(self, doc_id, email, perm="full_access"):
+        """把你本人加为文档协作者（按邮箱），文档进入“与我共享”并推送通知，
+        这样手机端飞书无需复制链接即可直接看到/打开。"""
+        if not email:
+            return
+        url = f"{BASE_URL}/drive/v1/permissions/{doc_id}/members?type=docx&need_notification=true"
+        resp = requests.post(url, headers=self._headers(), json={
+            "member_type": "email",
+            "member_id": email,
+            "perm": perm,
+        })
+        data = resp.json()
+        if data.get("code") != 0:
+            print(f"  [飞书] 添加协作者失败（不影响使用）: {data.get('msg', '')}")
+        else:
+            print(f"  [飞书] 已把你加为协作者，文档将出现在你的飞书里")
 
     def _build_block(self, text, block_type):
         """构建飞书文档块"""
@@ -139,6 +156,11 @@ class FeishuClient:
 
         self.add_blocks(doc_id, doc_id, blocks)
         self.set_public_sharing(doc_id)
+
+        # 把你本人加为协作者，文档出现在你的飞书“与我共享”并推送通知（手机端可直接打开）
+        user_email = os.environ.get("FEISHU_USER_EMAIL", "")
+        if user_email:
+            self.add_collaborator(doc_id, user_email)
 
         link = f"https://bytedance.feishu.cn/docx/{doc_id}"
         print(f"  [飞书] 文档链接: {link}")
