@@ -142,8 +142,8 @@ def label_speakers(segments: list, podcast_name: str = "") -> list:
 
     # 构造带全局编号的片段文本
     numbered = [f"{i}. {s['text']}" for i, s in enumerate(segments)]
-    # 每批字符数需保证「编号:角色名」标签映射能完整落在 max_tokens 内
-    batches = _split_batches(numbered, max_chars=10000)
+    # 每批同时限制字符数与段数，保证「编号:角色名」标签映射能完整落在 max_tokens 内
+    batches = _split_batches(numbered, max_chars=10000, max_segments=500)
     role_def = None
     labels = {}
 
@@ -202,11 +202,14 @@ def _merge_consecutive_speakers(lines: list) -> list:
     return merged
 
 
-def _split_batches(numbered: list, max_chars: int = 14000) -> list:
-    """把带编号的行拆成多个批次，保证每批总长度 <= max_chars 且不切断单行"""
+def _split_batches(numbered: list, max_chars: int = 10000, max_segments: int = 500) -> list:
+    """把带编号的行拆成多个批次，同时限制每批字符数与段数。
+    字符数约束输入 prompt 体积；段数约束输出「编号:角色名」标签映射的体积——
+    段过短时单纯按字符切会让单批段数过多、标签映射超过 max_tokens 被截断成【未知】。
+    max_segments=500 在 ~12 token/标签下约 6000 token，留足 max_tokens=8000 的余量。"""
     batches, cur, size = [], [], 0
     for line in numbered:
-        if size + len(line) + 1 > max_chars and cur:
+        if (size + len(line) + 1 > max_chars and cur) or len(cur) >= max_segments:
             batches.append(cur)
             cur, size = [], 0
         cur.append(line)
