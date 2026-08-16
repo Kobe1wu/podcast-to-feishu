@@ -70,15 +70,15 @@ class FeishuClient:
         else:
             print(f"  [飞书] 已设置组织内可编辑，文档将出现在你的飞书里并可编辑")
 
-    def add_collaborator(self, doc_id, email, perm="full_access"):
-        """把你本人加为文档协作者（按邮箱），文档进入“与我共享”并推送通知，
+    def add_collaborator(self, doc_id, open_id, perm="full_access"):
+        """把你本人加为文档协作者（按 open_id），文档进入“与我共享”并推送通知，
         这样手机端飞书无需复制链接即可直接看到/打开。"""
-        if not email:
+        if not open_id:
             return
         url = f"{BASE_URL}/drive/v1/permissions/{doc_id}/members?type=docx&need_notification=true"
         resp = requests.post(url, headers=self._headers(), json={
-            "member_type": "email",
-            "member_id": email,
+            "member_type": "openid",
+            "member_id": open_id,
             "perm": perm,
         })
         data = resp.json()
@@ -158,9 +158,9 @@ class FeishuClient:
         self.set_public_sharing(doc_id)
 
         # 把你本人加为协作者，文档出现在你的飞书“与我共享”并推送通知（手机端可直接打开）
-        user_email = os.environ.get("FEISHU_USER_EMAIL", "")
-        if user_email:
-            self.add_collaborator(doc_id, user_email)
+        user_open_id = os.environ.get("FEISHU_USER_OPEN_ID", "")
+        if user_open_id:
+            self.add_collaborator(doc_id, user_open_id)
 
         link = f"https://bytedance.feishu.cn/docx/{doc_id}"
         print(f"  [飞书] 文档链接: {link}")
