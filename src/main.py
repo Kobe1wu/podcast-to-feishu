@@ -10,7 +10,7 @@ import requests
 # 添加 src 到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from rss_checker import check_all
+from rss_checker import check_all, mark_processed
 from transcriber import transcribe_audio
 from summarizer import summarize_episode
 from feishu_writer import FeishuClient
@@ -104,10 +104,9 @@ def main():
                 episode_link=episode.get("link", "")
             )
             print(f"\n✅ 完成! 飞书文档: {doc_link}")
-            episode["doc_link"] = doc_link
+            mark_processed(eid)
         except Exception as e:
             print(f"  [错误] 写入飞书失败: {e}")
-            episode["doc_link"] = "写入失败"
 
     print(f"\n{'='*50}")
     print(f"✅ 全部完成! 处理了 {len(new_episodes)} 个新节目")

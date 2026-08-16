@@ -8,7 +8,6 @@ import os
 import re
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
 
 
 STATE_FILE = "state.json"
@@ -108,6 +107,9 @@ def check_podcast(rss_url: str, podcast_name: str, state: dict) -> list:
 
 
 def check_all(config: dict) -> list:
+    """只负责发现新节目，不写入 state。
+    标记“已处理”必须在 main 中、单集成功写入飞书之后才进行，
+    否则处理失败的节目会被误标为已完成而永久丢失。"""
     state = load_state()
     all_new = []
 
@@ -123,11 +125,19 @@ def check_all(config: dict) -> list:
             new = check_podcast(rss_url, name, state)
             all_new.extend(new)
             for eid, ep in new:
-                state["processed"].append(eid)
                 print(f"  [新] {ep['title'][:50]}")
         except Exception as e:
             print(f"  [错误] {name}: {e}")
 
-    save_state(state)
     print(f"[完成] 共发现 {len(all_new)} 个新节目")
     return all_new
+
+
+def mark_processed(eid: str):
+    """单集成功写入飞书后，才将其标记为已处理（每成功一集即落盘）。"""
+    state = load_state()
+    processed = state.setdefault("processed", [])
+    if eid not in processed:
+        processed.append(eid)
+        save_state(state)
+        print(f"  [状态] 已标记完成: {eid[:12]}")

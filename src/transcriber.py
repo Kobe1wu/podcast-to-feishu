@@ -142,7 +142,8 @@ def label_speakers(segments: list, podcast_name: str = "") -> list:
 
     # 构造带全局编号的片段文本
     numbered = [f"{i}. {s['text']}" for i, s in enumerate(segments)]
-    batches = _split_batches(numbered, max_chars=14000)
+    # 每批字符数需保证「编号:角色名」标签映射能完整落在 max_tokens 内
+    batches = _split_batches(numbered, max_chars=10000)
     role_def = None
     labels = {}
 
@@ -230,7 +231,7 @@ def _call_diarize(client, batch_lines, role_def, podcast_name):
             model="deepseek-chat",
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user}],
-            temperature=0.0, max_tokens=2000,
+            temperature=0.0, max_tokens=8000,
         )
         content = resp.choices[0].message.content or ""
         labels, _ = _parse_labels_only(content)
@@ -249,7 +250,7 @@ def _call_diarize(client, batch_lines, role_def, podcast_name):
         model="deepseek-chat",
         messages=[{"role": "system", "content": system},
                   {"role": "user", "content": user}],
-        temperature=0.0, max_tokens=3000,
+        temperature=0.0, max_tokens=8000,
     )
     content = resp.choices[0].message.content or ""
     return _parse_def_and_labels(content)
