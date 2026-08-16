@@ -5,6 +5,10 @@ on:
     - cron: '0 0,12 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: podcast-check
+  cancel-in-progress: false
+
 jobs:
   check-and-process:
     runs-on: ubuntu-latest
@@ -34,6 +38,7 @@ jobs:
         run: python src/main.py
 
       - name: 提交处理状态
+        if: always()
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
