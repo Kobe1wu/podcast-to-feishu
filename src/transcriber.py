@@ -94,8 +94,9 @@ def transcribe_audio(audio_url: str, podcast_name: str = "") -> str:
 
     # 角色区分
     labeled = label_speakers(segments, podcast_name)
-    result = "\n".join(labeled)
-    print(f"  [角色] 标注完成! 字数: {len(result)}")
+    merged = _merge_consecutive_speakers(labeled)
+    result = "\n".join(merged)
+    print(f"  [角色] 标注完成! 段落数: {len(merged)}, 字数: {len(result)}")
     return result
 
 
@@ -164,6 +165,40 @@ def label_speakers(segments: list, podcast_name: str = "") -> list:
             lab = "未知"
         out.append(f"【{lab}】{s['text'].lstrip()}")
     return out
+
+
+def _merge_consecutive_speakers(lines: list) -> list:
+    """
+    合并同一说话人连续段落，只保留一个【角色名】前缀。
+    例如：
+      【易燃】你好
+      【易燃】再见
+    合并为：
+      【易燃】你好 再见
+    """
+    merged = []
+    cur_speaker = None
+    cur_text = []
+    for line in lines:
+        m = re.match(r"^【([^】]+)】\s*(.*)$", line, re.S)
+        if not m:
+            # 没有角色前缀的行直接保留
+            merged.append(line)
+            cur_speaker = None
+            cur_text = []
+            continue
+        speaker, text = m.group(1), m.group(2).strip()
+        if speaker == cur_speaker and cur_text:
+            # 用空格拼接，避免两段之间没有分隔
+            cur_text.append(text)
+        else:
+            if cur_speaker is not None:
+                merged.append(f"【{cur_speaker}】{' '.join(cur_text)}")
+            cur_speaker = speaker
+            cur_text = [text]
+    if cur_speaker is not None:
+        merged.append(f"【{cur_speaker}】{' '.join(cur_text)}")
+    return merged
 
 
 def _split_batches(numbered: list, max_chars: int = 14000) -> list:
