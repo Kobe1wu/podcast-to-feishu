@@ -12,13 +12,17 @@
 
 [3/5] 创建测试文档
   [飞书] 文档创建成功: 自检-可删除
-  OK    document_id = CiAJdRIHno6HbOxX52QccxrhnJg
-       链接 https://bytedance.feishu.cn/docx/CiAJdRIHno6HbOxX52QccxrhnJg
+  OK    document_id = NPoFdI7MXokVJvxsVvmckE6anOh
+       链接 https://bytedance.feishu.cn/docx/NPoFdI7MXokVJvxsVvmckE6anOh
 
 [4/5] 设置共享权限 + 把你加为协作者
   [飞书] 已设置组织内可编辑，文档将出现在你的飞书里并可编辑
   [飞书] 已把你加为协作者（open_id ou_36afd…），文档将出现在你的飞书里
-  [飞书] 协作者校验: ★未出现在协作者列表★（该文档共 0 个协作者）
+  [飞书] 协作者校验(第1次): 共 0 个协作者，未命中
+  [飞书] 原始响应: {'code': 0, 'data': {'items': [{'member_id': 'cli_aaa8550a26389cd2', 'member_type': 'appid', 'perm': 'full_access', 'perm_type': 'container'}, {'member_id': 'ou_36afdeb8f9f6a6a20782af93caa5ef55', 'member_type': 'openid', 'perm': 'full_access', 'perm_type': 'container'}]}, 'msg': 'Success'}
+  [飞书] 协作者校验(第2次): 共 0 个协作者，未命中
+  [飞书] 协作者校验(第3次): 共 0 个协作者，未命中
+  [飞书] ★3 次查询均未见到该 open_id★（共 0 个协作者，未命中）
 
 ================================================================
 自检结论
