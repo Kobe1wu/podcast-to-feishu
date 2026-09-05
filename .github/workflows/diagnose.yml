@@ -6,9 +6,12 @@ name: 飞书可见性自检
 # （因为 Actions 日志需要鉴权才能下载，写文件可以用 raw 直接读取）。
 
 on:
+  # 改动自检脚本/飞书写入逻辑，或改动本文件时，都会自动跑一次自检
   push:
     paths:
       - '.github/workflows/diagnose.yml'
+      - 'src/diagnose.py'
+      - 'src/feishu_writer.py'
   workflow_dispatch:
 
 concurrency:

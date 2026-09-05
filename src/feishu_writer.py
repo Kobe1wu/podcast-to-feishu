@@ -72,22 +72,39 @@ class FeishuClient:
         return True
 
     def _verify_collaborator(self, doc_id, open_id):
-        """查询协作者列表，确认 open_id 确实被加进去了（不靠返回值盲信）"""
-        try:
-            url = f"{BASE_URL}/drive/v1/permissions/{doc_id}/members?type=docx"
-            resp = requests.get(url, headers=self._headers())
-            data = resp.json()
-            if data.get("code") != 0:
-                print(f"  [飞书] 校验协作者时查询失败: code={data.get('code')} msg={data.get('msg')}")
-                return True  # 查不到列表不代表没加上，不误报
-            members = (data.get("data") or {}).get("members", [])
-            hit = any(m.get("member_id") == open_id for m in members)
-            print(f"  [飞书] 协作者校验: {'已在列表中 ✓' if hit else '★未出现在协作者列表★'}"
-                  f"（该文档共 {len(members)} 个协作者）")
-            return hit
-        except Exception as e:
-            print(f"  [飞书] 校验协作者异常: {e}")
-            return True
+        """查询协作者列表，确认 open_id 确实被加进去了（不靠返回值盲信）。
+
+        注意：飞书权限变更可能是异步生效的，所以这里会延时重试几次，
+        并把原始响应片段打出来，便于区分『真的没加上』和『查太快/分页导致误报』。
+        """
+        url = f"{BASE_URL}/drive/v1/permissions/{doc_id}/members?type=docx&page_size=100"
+        last_summary = "未知"
+        for attempt in range(1, 4):
+            if attempt > 1:
+                time.sleep(3)
+            try:
+                resp = requests.get(url, headers=self._headers())
+                data = resp.json()
+                if data.get("code") != 0:
+                    last_summary = f"查询失败 code={data.get('code')} msg={data.get('msg')}"
+                    print(f"  [飞书] 协作者校验(第{attempt}次): {last_summary}")
+                    continue
+                payload = data.get("data") or {}
+                members = payload.get("members", [])
+                hit = any(m.get("member_id") == open_id for m in members)
+                last_summary = f"共 {len(members)} 个协作者，{'命中 ✓' if hit else '未命中'}"
+                print(f"  [飞书] 协作者校验(第{attempt}次): {last_summary}")
+                if attempt == 1:
+                    # 首次打印原始响应片段，便于定位是接口语义问题还是真的没加上
+                    print(f"  [飞书] 原始响应: {str(data)[:400]}")
+                if hit:
+                    return True
+            except Exception as e:
+                last_summary = f"异常 {type(e).__name__}: {e}"
+                print(f"  [飞书] 协作者校验(第{attempt}次): {last_summary}")
+
+        print(f"  [飞书] ★3 次查询均未见到该 open_id★（{last_summary}）")
+        return False
 
     def add_collaborator(self, doc_id, open_id, perm="full_access"):
         """把你本人加为文档协作者（按 open_id），文档进入“与我共享”并推送通知，
