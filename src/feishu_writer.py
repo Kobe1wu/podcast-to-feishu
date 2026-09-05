@@ -66,26 +66,64 @@ class FeishuClient:
         })
         data = resp.json()
         if data.get("code") != 0:
-            print(f"  [飞书] 设置共享权限失败（不影响使用）: {data.get('msg', '')}")
-        else:
-            print(f"  [飞书] 已设置组织内可编辑，文档将出现在你的飞书里并可编辑")
+            print(f"  [飞书][警告] 设置共享权限失败: code={data.get('code')} msg={data.get('msg')}")
+            return False
+        print(f"  [飞书] 已设置组织内可编辑，文档将出现在你的飞书里并可编辑")
+        return True
+
+    def _verify_collaborator(self, doc_id, open_id):
+        """查询协作者列表，确认 open_id 确实被加进去了（不靠返回值盲信）"""
+        try:
+            url = f"{BASE_URL}/drive/v1/permissions/{doc_id}/members?type=docx"
+            resp = requests.get(url, headers=self._headers())
+            data = resp.json()
+            if data.get("code") != 0:
+                print(f"  [飞书] 校验协作者时查询失败: code={data.get('code')} msg={data.get('msg')}")
+                return True  # 查不到列表不代表没加上，不误报
+            members = (data.get("data") or {}).get("members", [])
+            hit = any(m.get("member_id") == open_id for m in members)
+            print(f"  [飞书] 协作者校验: {'已在列表中 ✓' if hit else '★未出现在协作者列表★'}"
+                  f"（该文档共 {len(members)} 个协作者）")
+            return hit
+        except Exception as e:
+            print(f"  [飞书] 校验协作者异常: {e}")
+            return True
 
     def add_collaborator(self, doc_id, open_id, perm="full_access"):
         """把你本人加为文档协作者（按 open_id），文档进入“与我共享”并推送通知，
-        这样手机端飞书无需复制链接即可直接看到/打开。"""
+        这样手机端飞书无需复制链接即可直接看到/打开。
+
+        失败会重试一次，成功后主动查询协作者列表做校验——不再静默吞掉错误。
+        返回 True/False 便于调用方和自检脚本判断。"""
+        open_id = (open_id or "").strip()
         if not open_id:
-            return
+            print("  [飞书][严重] open_id 为空，无法添加协作者 —— "
+                  "文档不会出现在你的飞书『与我共享』，手机端必须先手动打开链接一次才能看到。")
+            return False
+
         url = f"{BASE_URL}/drive/v1/permissions/{doc_id}/members?type=docx&need_notification=true"
-        resp = requests.post(url, headers=self._headers(), json={
-            "member_type": "openid",
-            "member_id": open_id,
-            "perm": perm,
-        })
-        data = resp.json()
-        if data.get("code") != 0:
-            print(f"  [飞书] 添加协作者失败（不影响使用）: {data.get('msg', '')}")
-        else:
-            print(f"  [飞书] 已把你加为协作者，文档将出现在你的飞书里")
+        last_err = None
+        for attempt in range(1, 3):
+            try:
+                resp = requests.post(url, headers=self._headers(), json={
+                    "member_type": "openid",
+                    "member_id": open_id,
+                    "perm": perm,
+                })
+                data = resp.json()
+                if data.get("code") == 0:
+                    print(f"  [飞书] 已把你加为协作者（open_id {open_id[:8]}…），文档将出现在你的飞书里")
+                    return self._verify_collaborator(doc_id, open_id)
+                last_err = f"code={data.get('code')} msg={data.get('msg')}"
+            except Exception as e:
+                last_err = f"异常 {type(e).__name__}: {e}"
+            print(f"  [飞书] 添加协作者第 {attempt} 次失败: {last_err}")
+            if attempt < 2:
+                time.sleep(2)
+
+        print(f"  [飞书][严重] 添加协作者最终失败: {last_err} —— "
+              f"手机端飞书看不到该文档，需手动打开链接一次才会出现")
+        return False
 
     def _build_block(self, text, block_type):
         """构建飞书文档块"""
@@ -158,8 +196,12 @@ class FeishuClient:
         self.set_public_sharing(doc_id)
 
         # 把你本人加为协作者，文档出现在你的飞书“与我共享”并推送通知（手机端可直接打开）
-        user_open_id = os.environ.get("FEISHU_USER_OPEN_ID", "")
-        if user_open_id:
+        user_open_id = (os.environ.get("FEISHU_USER_OPEN_ID") or "").strip()
+        if not user_open_id:
+            print("  [飞书][严重] FEISHU_USER_OPEN_ID 未配置或为空 —— 文档不会进入你的飞书『与我共享』，"
+                  "手机端必须先手动打开链接一次才能看到。"
+                  "请在仓库 Settings > Secrets and variables > Actions 中配置该值（形如 ou_xxxx）。")
+        else:
             self.add_collaborator(doc_id, user_open_id)
 
         link = f"https://bytedance.feishu.cn/docx/{doc_id}"
