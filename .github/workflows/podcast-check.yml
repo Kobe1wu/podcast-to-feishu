@@ -2,7 +2,8 @@ name: 播客更新检查
 
 on:
   schedule:
-    - cron: '0 0,12 * * *'
+    # UTC 每 2 小时一次（= 北京时间偶数小时），把最坏等待从 12h 压到 2h
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -17,13 +18,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装系统依赖
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      # ubuntu-latest 已预装 ffmpeg；仅当缺失时才装，省掉每次约 20-40s 的 apt 开销
+      - name: 确保 ffmpeg 可用
+        run: command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
 
       - name: 安装 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: 安装依赖
         run: pip install -r requirements.txt
