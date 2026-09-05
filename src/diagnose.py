@@ -96,6 +96,13 @@ def main():
     open_id = (os.environ.get("FEISHU_USER_OPEN_ID") or "").strip()
     collab_ok = client.add_collaborator(doc_id, open_id) if open_id else False
 
+    # 兜底通道：机器人主动发消息（不依赖『与我共享』列表的展示行为）
+    msg_ok = False
+    if open_id:
+        print("\n[4.5/5] 测试机器人消息推送（兜底通道）")
+        msg_ok = client.send_message(open_id, "自检：文档可见性验证",
+                                     f"https://bytedance.feishu.cn/docx/{doc_id}")
+
     # 汇总
     print("\n" + "=" * 64)
     print("自检结论")
@@ -103,17 +110,26 @@ def main():
     if not env_ok:
         print("✗ 环境变量缺失（尤其是 FEISHU_USER_OPEN_ID）。")
         print("  → 到仓库 Settings > Secrets and variables > Actions 补齐后重跑。")
-        print("  → open_id 获取方式：飞书开放平台『权限管理』开通 contact:user.id:readonly，")
+        print("  → open_id 获取方式：飞书开放平台开通 contact:user.id:readonly，")
         print("     用手机号调 contact/v3/users/batch_get_id 换取（形如 ou_xxxx），并记得发布新版本。")
-    elif collab_ok:
-        print("✓ 协作者添加成功且已在列表中 —— 新文档应当直接出现在手机端飞书『与我共享』里。")
+    elif collab_ok and msg_ok:
+        print("✓ 协作者已加入 + 机器人消息可送达 —— 双通道都通，")
+        print("  新文档既在『与我共享』里，手机端也会直接收到通知。")
+    elif collab_ok and not msg_ok:
+        print("△ 协作者添加成功（权限链路正常），但机器人消息推送不可用。")
+        print("  → 文档应当出现在飞书『与我共享』中；若手机端仍看不到，")
+        print("     说明该文档走的是『组织内可编辑』，权限来自组织而非个人分享，")
+        print("     飞书可能不把它归入『与我共享』。")
+        print("  → 建议开通 im:message 权限，用消息推送作为可靠兜底。")
     else:
         print("✗ 协作者未成功添加 —— 这正是手机端看不到文档的原因。")
         print("  → 若报错 code=99991672/99991663：应用缺少权限或权限未生效，")
         print("     去飞书开放平台为该应用勾选 drive:permission（及 docs 相关）权限，")
         print("     然后【创建并发布新版本】，权限才会真正生效。")
         print("  → 若报错含 invalid member / user not exist：FEISHU_USER_OPEN_ID 值不对，重新获取。")
-    print(f"\n明细: 共享权限={'OK' if share_ok else '失败'}  协作者={'OK' if collab_ok else '失败'}")
+    print(f"\n明细: 共享权限={'OK' if share_ok else '失败'}  "
+          f"协作者={'OK' if collab_ok else '失败'}  "
+          f"消息推送={'OK' if msg_ok else '失败'}")
     print("=" * 64)
 
     try_delete(client, doc_id)

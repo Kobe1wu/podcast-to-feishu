@@ -2,6 +2,7 @@
 飞书文档写入模块
 创建文档后自动设置共享权限，文档直接出现在你的飞书里
 """
+import json
 import os
 import requests
 import time
@@ -90,9 +91,12 @@ class FeishuClient:
                     print(f"  [飞书] 协作者校验(第{attempt}次): {last_summary}")
                     continue
                 payload = data.get("data") or {}
-                members = payload.get("members", [])
-                hit = any(m.get("member_id") == open_id for m in members)
-                last_summary = f"共 {len(members)} 个协作者，{'命中 ✓' if hit else '未命中'}"
+                # 注意：飞书该接口返回的是 items（不是 members），此前读错字段导致一直误报"0 个协作者"
+                items = payload.get("items")
+                if items is None:
+                    items = payload.get("members", [])
+                hit = any(m.get("member_id") == open_id for m in items)
+                last_summary = f"共 {len(items)} 个协作者，{'命中 ✓' if hit else '未命中'}"
                 print(f"  [飞书] 协作者校验(第{attempt}次): {last_summary}")
                 if attempt == 1:
                     # 首次打印原始响应片段，便于定位是接口语义问题还是真的没加上
@@ -141,6 +145,40 @@ class FeishuClient:
         print(f"  [飞书][严重] 添加协作者最终失败: {last_err} —— "
               f"手机端飞书看不到该文档，需手动打开链接一次才会出现")
         return False
+
+    def send_message(self, open_id, title, doc_link, podcast_name=""):
+        """用机器人给你发一条消息（含文档链接）。
+
+        为什么需要它：文档设了『组织内可编辑』，你的权限来自组织而非『某人分享给我』，
+        飞书未必会把它列进『与我共享』——这正是"必须先在浏览器打开一次才看得到"的原因。
+        主动发消息可以保证手机端一定收到通知、点开即是文档，是最可靠的兜底。
+        若应用未开通 im:message 权限会失败，但不影响文档本身。"""
+        open_id = (open_id or "").strip()
+        if not open_id:
+            print("  [飞书] open_id 为空，跳过消息推送")
+            return False
+
+        url = f"{BASE_URL}/im/v1/messages?receive_id_type=open_id"
+        lines = [f"新播客笔记：{title}"]
+        if podcast_name:
+            lines.append(f"来自：{podcast_name}")
+        lines.append(doc_link)
+        try:
+            resp = requests.post(url, headers=self._headers(), json={
+                "receive_id": open_id,
+                "msg_type": "text",
+                "content": json.dumps({"text": "\n".join(lines)}),
+            })
+            data = resp.json()
+            if data.get("code") == 0:
+                print("  [飞书] 已通过机器人消息推送文档链接（手机端会收到通知，点开即达）")
+                return True
+            print(f"  [飞书] 消息推送失败: code={data.get('code')} msg={data.get('msg')}")
+            print("        → 需在飞书开放平台给应用开通 im:message 权限并发布新版本；不影响文档本身。")
+            return False
+        except Exception as e:
+            print(f"  [飞书] 消息推送异常: {type(e).__name__}: {e}")
+            return False
 
     def _build_block(self, text, block_type):
         """构建飞书文档块"""
@@ -222,5 +260,8 @@ class FeishuClient:
             self.add_collaborator(doc_id, user_open_id)
 
         link = f"https://bytedance.feishu.cn/docx/{doc_id}"
+        # 兜底：主动发消息，确保手机端一定收到通知（不依赖『与我共享』列表的展示行为）
+        if user_open_id:
+            self.send_message(user_open_id, title, link, podcast_name)
         print(f"  [飞书] 文档链接: {link}")
         return link
