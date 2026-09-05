@@ -2,8 +2,7 @@ name: 播客更新检查
 
 on:
   schedule:
-    # UTC 每 2 小时一次（= 北京时间偶数小时），把最坏等待从 12h 压到 2h
-    - cron: '0 */2 * * *'
+    - cron: '0 0,12 * * *'
   workflow_dispatch:
     inputs:
       mode:

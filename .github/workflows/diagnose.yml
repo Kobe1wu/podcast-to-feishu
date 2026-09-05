@@ -1,0 +1,55 @@
+name: 飞书可见性自检
+
+# 说明：专门用于排查"文档生成了但手机端飞书看不到"。
+# push 本文件即触发运行；也可在 Actions 页面手动 Run workflow。
+# 自检不处理播客、不产生正式文档，只验证可见性链路，并把结果写回仓库
+# （因为 Actions 日志需要鉴权才能下载，写文件可以用 raw 直接读取）。
+
+on:
+  push:
+    paths:
+      - '.github/workflows/diagnose.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: feishu-diagnose
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 运行飞书权限自检
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_USER_OPEN_ID: ${{ secrets.FEISHU_USER_OPEN_ID }}
+        run: |
+          python src/diagnose.py 2>&1 | tee DIAGNOSE_RESULT.md
+          exit 0
+
+      - name: 提交自检结果
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add DIAGNOSE_RESULT.md
+          if git diff --staged --quiet; then
+            echo "自检结果与上次一致，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore: 飞书可见性自检结果"
+          git pull --rebase origin main || true
+          git push origin HEAD:main
