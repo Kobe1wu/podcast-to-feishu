@@ -175,6 +175,29 @@ def groq_probe(sample):
     return len(text)
 
 
+def full_transcribe(audio_url, podcast_name):
+    """端到端跑一次真实的 transcribe_audio，看它最终返回多少字。
+    这是决定性测试：若它返回健康的长文本，说明「转录」不是断点，
+    问题在于历史文档从未被重新生成。"""
+    t = time.time()
+    text = transcriber.transcribe_audio(audio_url, podcast_name=podcast_name)
+    cost = time.time() - t
+    lines = [l for l in (text or "").splitlines() if l.strip()]
+    log(f"  端到端总耗时 : {cost:.1f}s")
+    log(f"  返回总字数   : {len(text or '')}")
+    log(f"  段落数       : {len(lines)}")
+    if text:
+        log(f"  开头 300 字  : {text[:300]}")
+        log(f"  结尾 150 字  : {text[-150:]}")
+        labeled = sum(1 for l in lines if l.startswith("【"))
+        log(f"  带角色标签段 : {labeled}")
+    if not text or len(text) < 200:
+        raise RuntimeError(
+            f"端到端转录结果为空或过短（{len(text or '')} 字）—— 复现了简陋文档的成因"
+        )
+    return len(text)
+
+
 def write_report():
     out = [
         "# 音频链路探针结果",
@@ -187,10 +210,11 @@ def write_report():
         "|---|---|---|",
     ]
     for step, status, detail in RESULTS:
-        mark = {"OK": "通过", "FAIL": "**失败**", "TIMEOUT": "**超时**"}.get(status, status)
+        mark = {"OK": "通过", "FAIL": "**失败**", "TIMEOUT": "**超时**",
+                "SKIP": "跳过"}.get(status, status)
         out.append(f"| {step} | {mark} | {detail} |")
 
-    failed = [r for r in RESULTS if r[1] != "OK"]
+    failed = [r for r in RESULTS if r[1] not in ("OK", "SKIP")]
     out += ["", "## 一句话诊断", ""]
     if not failed:
         out.append("音频链路（下载 / 探测 / 压缩 / 切片 / Groq 试转）全部通过。")
@@ -320,6 +344,18 @@ def main():
         return
 
     guard("Groq 试转样本", lambda: groq_probe(sample))
+
+    log()
+    log("=" * 64)
+    log("决定性测试：端到端跑一次真实 transcribe_audio")
+    log("=" * 64)
+    if os.environ.get("PROBE_FULL"):
+        log("  说明：本次会完整转写一集（消耗 Groq 配额），用于判断「转录是否真的失败」。")
+        guard("端到端 transcribe_audio（完整一集）",
+              lambda: full_transcribe(audio_url, first.get("name", "")))
+    else:
+        log("[跳过] 未设置 PROBE_FULL，不做端到端转录（避免消耗 Groq 配额）")
+        record("端到端 transcribe_audio（完整一集）", "SKIP", "未设置 PROBE_FULL")
 
     cleanup()
     finish()
