@@ -1,17 +1,20 @@
-name: 飞书可见性自检
+name: 飞书可见性自检 + 音频链路探针
 
-# 说明：专门用于排查"文档生成了但手机端飞书看不到"。
-# push 本文件即触发运行；也可在 Actions 页面手动 Run workflow。
-# 自检不处理播客、不产生正式文档，只验证可见性链路，并把结果写回仓库
-# （因为 Actions 日志需要鉴权才能下载，写文件可以用 raw 直接读取）。
+# 说明：
+#  - 飞书自检：排查「文档生成了但手机端看不到」。
+#  - 音频探针：排查「文档总结简陋 / 没有完整文字稿」。逐步验证
+#    下载 → ffprobe → 压缩 → 切片 → Groq 试转，把真实断点写进 PROBE_RESULT.md。
+#  push 相关文件即触发；也可在 Actions 页面手动 Run workflow。
+#  两者都不处理正式播客、不写 state、不建正式文档。
+#  结果写回仓库，可用 raw 直接读取（Actions 日志需要鉴权才能下载）。
 
 on:
-  # 改动自检脚本/飞书写入逻辑，或改动本文件时，都会自动跑一次自检
   push:
     paths:
       - '.github/workflows/diagnose.yml'
       - 'src/diagnose.py'
       - 'src/feishu_writer.py'
+      - 'src/probe_audio.py'
   workflow_dispatch:
 
 concurrency:
@@ -26,6 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 确保 ffmpeg 可用
+        run: command -v ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+
       - name: 安装 Python
         uses: actions/setup-python@v5
         with:
@@ -34,6 +40,13 @@ jobs:
 
       - name: 安装依赖
         run: pip install -r requirements.txt
+
+      - name: 音频链路探针（不处理播客）
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          python src/probe_audio.py 2>&1 | tee /tmp/probe.log || true
 
       - name: 运行飞书权限自检
         env:
@@ -44,15 +57,15 @@ jobs:
           python src/diagnose.py 2>&1 | tee DIAGNOSE_RESULT.md
           exit 0
 
-      - name: 提交自检结果
+      - name: 提交诊断结果
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add DIAGNOSE_RESULT.md
+          git add -A
           if git diff --staged --quiet; then
-            echo "自检结果与上次一致，跳过提交"
+            echo "结果与上次一致，跳过提交"
             exit 0
           fi
-          git commit -m "chore: 飞书可见性自检结果"
+          git commit -m "chore: 诊断结果（音频链路 + 飞书可见性）"
           git pull --rebase origin main || true
           git push origin HEAD:main
