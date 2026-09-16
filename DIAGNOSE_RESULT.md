@@ -12,8 +12,8 @@
 
 [3/5] 创建测试文档
   [飞书] 文档创建成功: 自检-可删除
-  OK    document_id = EckadE30YodRhOxLMJpcDFf1nxc
-       链接 https://bytedance.feishu.cn/docx/EckadE30YodRhOxLMJpcDFf1nxc
+  OK    document_id = VYhKd66qPoO4FdxcFUhcyf6Vn1c
+       链接 https://bytedance.feishu.cn/docx/VYhKd66qPoO4FdxcFUhcyf6Vn1c
 
 [4/5] 设置共享权限 + 把你加为协作者
   [飞书] 已设置组织内可编辑，文档将出现在你的飞书里并可编辑
