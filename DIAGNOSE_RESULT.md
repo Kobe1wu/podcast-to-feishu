@@ -12,14 +12,14 @@
 
 [3/5] 创建测试文档
   [飞书] 文档创建成功: 自检-可删除
-  OK    document_id = F4GAdTDPoowss5xcZY2c5wKNnNe
-       链接 https://bytedance.feishu.cn/docx/F4GAdTDPoowss5xcZY2c5wKNnNe
+  OK    document_id = EckadE30YodRhOxLMJpcDFf1nxc
+       链接 https://bytedance.feishu.cn/docx/EckadE30YodRhOxLMJpcDFf1nxc
 
 [4/5] 设置共享权限 + 把你加为协作者
   [飞书] 已设置组织内可编辑，文档将出现在你的飞书里并可编辑
   [飞书] 已把你加为协作者（open_id ou_36afd…），文档将出现在你的飞书里
   [飞书] 协作者校验(第1次): 共 2 个协作者，命中 ✓
-  [飞书] 原始响应: {'code': 0, 'data': {'items': [{'member_id': 'cli_aaa8550a26389cd2', 'member_type': 'appid', 'perm': 'full_access', 'perm_type': 'container'}, {'member_id': 'ou_36afdeb8f9f6a6a20782af93caa5ef55', 'member_type': 'openid', 'perm': 'full_access', 'perm_type': 'container'}]}, 'msg': 'Success'}
+  [飞书] 原始响应: {'code': 0, 'data': {'items': [{'member_id': 'ou_36afdeb8f9f6a6a20782af93caa5ef55', 'member_type': 'openid', 'perm': 'full_access', 'perm_type': 'container'}, {'member_id': 'cli_aaa8550a26389cd2', 'member_type': 'appid', 'perm': 'full_access', 'perm_type': 'container'}]}, 'msg': 'Success'}
 
 [4.5/5] 测试机器人消息推送（兜底通道）
   [飞书] 已通过机器人消息推送文档链接（手机端会收到通知，点开即达）
